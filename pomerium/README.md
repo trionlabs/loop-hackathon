@@ -30,9 +30,12 @@ there, not in a local file.
 
 1. Put `POMERIUM_ZERO_TOKEN` in `config/.env` (already done). The cluster domain
    is your Zero namespace, for example `closing-dory-8243.pomerium.app`.
-2. Start the write-server: `pnpm mcp:write` (listens on 127.0.0.1:8787).
+2. Start the write-server so the Docker Pomerium container can reach it:
+   `WRITE_SERVER_HOST=0.0.0.0 pnpm mcp:write` (loopback is the default and is
+   NOT reachable from a container via host.docker.internal).
 3. Start Pomerium: `docker compose --env-file ../config/.env up` from this dir.
-4. In the Pomerium Zero console, create a route:
+4. In the Pomerium Zero console, create a New Route of type HTTP (not SSH, not
+   Kubernetes - the write-server is a plain HTTP API):
    - From: `https://writeguard.<your-namespace>.pomerium.app`
    - To: `http://host.docker.internal:8787/mcp`
    - Enable the MCP server option on the route (mcp: server).
