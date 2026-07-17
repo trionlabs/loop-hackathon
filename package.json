@@ -13,6 +13,8 @@
     "loop:signal": "tsx runner/run-loop.ts signal",
     "loop:impact": "tsx runner/run-loop.ts impact",
     "keys:check": "tsx scripts/keys-wizard.ts",
+    "notion:setup": "tsx scripts/notion-setup.ts",
+    "notion:sync": "tsx scripts/notion-sync.ts",
     "mcp:write": "tsx mcp-write-server/index.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
