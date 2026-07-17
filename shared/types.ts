@@ -97,6 +97,26 @@ export interface ImpactJob {
 
 export type Flag = "crisis" | "paused" | "killswitch";
 
+export type EventKind =
+  | "tool"
+  | "draft"
+  | "approval"
+  | "post"
+  | "impact"
+  | "learning"
+  | "signal"
+  | "info";
+
+export interface LoopEvent {
+  id: string;
+  ts: string;
+  loop: string;
+  agent?: string;
+  phase: string;
+  detail: string;
+  kind: EventKind;
+}
+
 export interface Store {
   reload(): void;
 
@@ -132,4 +152,7 @@ export interface Store {
   addImpactJob(j: ImpactJob): void;
   dueImpactJobs(nowIso: string): ImpactJob[];
   completeImpactJob(postId: string, checkpoint: Checkpoint): void;
+
+  appendEvent(e: Omit<LoopEvent, "id" | "ts">): void;
+  recentEvents(limit: number): LoopEvent[];
 }

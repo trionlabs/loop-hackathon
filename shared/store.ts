@@ -9,6 +9,7 @@ import type {
   Flag,
   ImpactJob,
   Learning,
+  LoopEvent,
   Post,
   SignalAccount,
   Store,
@@ -24,6 +25,7 @@ interface Shape {
   flags: Partial<Record<Flag, boolean>>;
   postedTexts: { text: string; at: string }[];
   impactJobs: ImpactJob[];
+  events: LoopEvent[];
 }
 
 const empty: Shape = {
@@ -36,6 +38,7 @@ const empty: Shape = {
   flags: {},
   postedTexts: [],
   impactJobs: [],
+  events: [],
 };
 
 function today(): string {
@@ -216,6 +219,25 @@ export class JsonStore implements Store {
       if (j.postId === postId && j.checkpoint === checkpoint) j.done = true;
     }
     this.flush();
+  }
+
+  appendEvent(e: Omit<LoopEvent, "id" | "ts">): void {
+    this.reload();
+    const ev: LoopEvent = {
+      ...e,
+      id: `ev_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+      ts: new Date().toISOString(),
+    };
+    this.data.events.push(ev);
+    if (this.data.events.length > 300) {
+      this.data.events = this.data.events.slice(-300);
+    }
+    this.flush();
+  }
+
+  recentEvents(limit: number): LoopEvent[] {
+    this.reload();
+    return this.data.events.slice(-limit).reverse();
   }
 }
 
