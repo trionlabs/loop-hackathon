@@ -115,6 +115,12 @@ export interface LoopEvent {
   phase: string;
   detail: string;
   kind: EventKind;
+  provider?: string;
+  endpoint?: string;
+  method?: string;
+  model?: string;
+  ms?: number;
+  status?: string;
 }
 
 export interface Store {
