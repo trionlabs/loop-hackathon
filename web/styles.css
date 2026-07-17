@@ -346,3 +346,12 @@ textarea:focus { outline: none; border-color: var(--accent); }
 .toast-msg.warn { background: var(--watch); }
 .toast-msg.err { background: var(--danger); }
 .toast-msg a { color: #fff; text-decoration: underline; margin-left: 8px; }
+
+/* posted modal */
+.modal-host { position: fixed; inset: 0; background: rgba(0,0,0,0.55); display: flex; align-items: center; justify-content: center; z-index: 60; }
+.modal-card { background: var(--panel); border: 1px solid var(--line); border-radius: 18px; padding: 32px 36px; text-align: center; box-shadow: var(--shadow); max-width: 440px; }
+.modal-badge { display: inline-block; background: var(--signal); color: #fff; font-weight: 700; font-size: 13px; padding: 6px 14px; border-radius: 999px; letter-spacing: 0.03em; }
+.modal-sub { color: var(--ink-soft); margin: 16px 0 22px; }
+.modal-link { display: inline-block; background: var(--accent); color: #fff; font-weight: 700; padding: 12px 22px; border-radius: 12px; text-decoration: none; }
+.modal-link:hover { filter: brightness(1.06); }
+.modal-close { display: block; margin: 16px auto 0; background: none; border: none; color: var(--ink-soft); cursor: pointer; font-size: 13px; }

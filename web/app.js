@@ -330,6 +330,17 @@ function toast(msg, kind, url) {
   }, 8000);
 }
 
+function showPosted(url) {
+  var m = el("modal");
+  var link = el("modal-link");
+  if (!m || !link) {
+    window.open(url, "_blank");
+    return;
+  }
+  link.setAttribute("href", url);
+  m.style.display = "flex";
+}
+
 function submitDecision(draftId, decision, editedText) {
   if (pendingDecision) return;
   pendingDecision = draftId;
@@ -352,7 +363,10 @@ function submitDecision(draftId, decision, editedText) {
       else if (res.status === 404) toast("Unknown draft", "warn");
       else if (res.status >= 400) toast("Request failed", "err");
       else if (decision === "rejected") toast("Draft rejected", "warn");
-      else if (b.posted && b.url) toast("Posted to X", "ok", b.url);
+      else if (b.posted && b.url) {
+        toast("Posted to X", "ok");
+        showPosted(b.url);
+      }
       else if (b.posted === false) toast("Post failed: " + (b.error || "unknown"), "err");
       else toast(decision === "edited" ? "Edited + posted" : "Approved", "ok");
       poll();
@@ -416,6 +430,20 @@ if (runBtn) {
         runBtn.disabled = false;
         runBtn.textContent = "Run content loop";
       });
+  });
+}
+
+var modalClose = el("modal-close");
+if (modalClose) {
+  modalClose.addEventListener("click", function () {
+    var m = el("modal");
+    if (m) m.style.display = "none";
+  });
+}
+var modalHost = el("modal");
+if (modalHost) {
+  modalHost.addEventListener("click", function (e) {
+    if (e.target === modalHost) modalHost.style.display = "none";
   });
 }
 

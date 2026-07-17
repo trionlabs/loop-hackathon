@@ -1,6 +1,7 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import express from "express";
+import "../shared/env.js";
 import { getStore } from "../shared/store.js";
 import type {
   ApprovalDecision,
@@ -119,7 +120,13 @@ export function createApp(): express.Express {
         const mod = await import("../runner/orchestrator.js");
         const r = await mod.runContentPost(draftId);
         if (r.postId) {
-          res.json({ ok: true, posted: true, postId: r.postId, url: `https://x.com/i/status/${r.postId}` });
+          const handle = process.env.PRINCIPAL_HANDLE || "i";
+          res.json({
+            ok: true,
+            posted: true,
+            postId: r.postId,
+            url: `https://x.com/${handle}/status/${r.postId}`,
+          });
         } else {
           res.json({ ok: true, posted: false, error: r.error ?? "post failed" });
         }
