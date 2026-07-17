@@ -20,3 +20,7 @@ export const limits = {
 export const NOTION_VERSION = "2026-03-11";
 export const XAI_BASE = "https://api.x.ai/v1";
 export const X_API_BASE = "https://api.x.com/2";
+
+// AkashML open-model inference (OpenAI compatible) is the agent brain.
+export const AKASHML_BASE = process.env.AKASHML_BASE_URL ?? "https://api.akashml.com/v1";
+export const AKASHML_MODEL = process.env.AKASHML_MODEL ?? "deepseek-ai/DeepSeek-V4-Flash";
