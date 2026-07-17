@@ -88,6 +88,13 @@ async function execTool(
   }
 }
 
+function toolLabel(name: string): string {
+  if (name === "grok_research") return "Grok x_search: reading live X";
+  if (name === "notion_query") return "Notion: reading memory";
+  if (name === "zero_generate_image") return "Zero: generating image";
+  return name;
+}
+
 // Manual OpenAI-style tool-calling loop against AkashML (open model). Replaces
 // the Claude Agent SDK: the model may call read tools; each result is fed back
 // until it returns a final text message with no tool calls.
@@ -112,6 +119,13 @@ async function draftLoop(
         } catch {
           args = {};
         }
+        getStore().appendEvent({
+          loop: "content",
+          agent: "content-writer",
+          phase: "tool",
+          kind: "tool",
+          detail: toolLabel(tc.function.name),
+        });
         const result = await execTool(tc.function.name, args, imageHolder);
         messages.push({
           role: "tool",
@@ -137,6 +151,13 @@ export async function runContentDraft(input?: {
   goal?: string;
 }): Promise<{ draftId: string }> {
   const store = getStore();
+  store.appendEvent({
+    loop: "content",
+    agent: "content-writer",
+    phase: "start",
+    kind: "info",
+    detail: "content loop started: drafting today's post",
+  });
   const learnings = store.recentLearnings(10);
   const learningsText = learnings.length
     ? learnings.map((l) => `- [${l.id}] (${l.what}) ${l.observed} -> ${l.hypothesis}`).join("\n")
@@ -190,6 +211,13 @@ export async function runContentDraft(input?: {
     updatedAt: now,
   };
   store.putDraft(draft);
+  store.appendEvent({
+    loop: "content",
+    agent: "content-writer",
+    phase: "draft",
+    kind: "draft",
+    detail: `draft ready for approval${learnings[0] ? ` (applied learning ${learnings[0].id})` : ""}`,
+  });
 
   try {
     await sendDraftForApproval(draft);

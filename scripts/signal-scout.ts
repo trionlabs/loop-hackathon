@@ -31,6 +31,13 @@ interface Row {
   rationale?: string;
 }
 
+getStore().appendEvent({
+  loop: "signal",
+  agent: "signal-scout",
+  phase: "tool",
+  kind: "tool",
+  detail: "Grok x_search: scoring accounts for the audience",
+});
 const { answer } = await research({ brief });
 const match = answer.match(/\[[\s\S]*\]/);
 if (!match) {
@@ -71,6 +78,13 @@ const accounts: SignalAccount[] = rows.map((row) => {
 const store = getStore();
 store.clearSignalAccounts();
 for (const acc of accounts) store.putSignalAccount(acc);
+store.appendEvent({
+  loop: "signal",
+  agent: "signal-scout",
+  phase: "done",
+  kind: "signal",
+  detail: `scored ${accounts.length} accounts (signal/watchlist/noise)`,
+});
 
 // Notion mirror is best effort.
 try {

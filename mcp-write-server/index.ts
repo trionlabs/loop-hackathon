@@ -118,6 +118,13 @@ async function postDraft(draftId: string): Promise<{ ok: boolean; postId?: strin
     };
     store.addImpactJob(job);
   }
+  store.appendEvent({
+    loop: "post",
+    agent: "orchestrator",
+    phase: "posted",
+    kind: "post",
+    detail: `posted to X (${posted.id}); impact jobs queued T+1h/24h/72h`,
+  });
   // Mirror to the Notion visible brain, best effort (never blocks the post).
   void syncPost(post).catch((e) => console.error("[writeguard] notion sync failed:", e));
   return { ok: true, postId: posted.id };
