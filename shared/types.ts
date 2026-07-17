@@ -107,6 +107,7 @@ export interface Store {
 
   putSignalAccount(a: SignalAccount): void;
   listSignalAccounts(): SignalAccount[];
+  clearSignalAccounts(): void;
 
   putApproval(a: ApprovalRecord): void;
   getApproval(draftId: string): ApprovalRecord | undefined;

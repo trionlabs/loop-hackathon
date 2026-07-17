@@ -111,6 +111,12 @@ export class JsonStore implements Store {
     return Object.values(this.data.signalAccounts);
   }
 
+  clearSignalAccounts(): void {
+    this.reload();
+    this.data.signalAccounts = {};
+    this.flush();
+  }
+
   putApproval(a: ApprovalRecord): void {
     this.reload();
     this.data.approvals[a.draftId] = a;
