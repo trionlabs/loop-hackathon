@@ -1,271 +1,190 @@
 import fs from "node:fs";
-import path from "node:path";
-import { parse as parseYaml } from "yaml";
-import { z } from "zod";
-import {
-  query,
-  tool,
-  createSdkMcpServer,
-  type AgentDefinition,
-} from "@anthropic-ai/claude-agent-sdk";
+import { chat, type ChatMessage, type ToolSpec } from "../tools/akashml.js";
 import { getStore } from "../shared/store.js";
+import { requireEnv } from "../shared/env.js";
 import type { Draft } from "../shared/types.js";
-import { buildHooks } from "../hooks/guardrails.js";
 import { sendDraftForApproval } from "./telegram.js";
 import { research } from "../tools/grok.js";
 import { resolveDataSourceId, queryDataSource } from "../tools/notion.js";
 import { generateImage } from "../tools/zero.js";
 
-type QueryOptions = NonNullable<Parameters<typeof query>[0]["options"]>;
-
-const WRITEGUARD_URL = process.env.WRITEGUARD_URL ?? "http://localhost:8787/mcp";
-const READ_TOOLS = [
-  "mcp__reads__grok_research",
-  "mcp__reads__notion_query",
-  "mcp__reads__zero_generate_image",
-];
-
 function errMsg(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
 }
 
-function loadPersistentRules(): string {
+function readFileSafe(p: string): string {
   try {
-    return fs.readFileSync("config/persistent-rules.md", "utf8");
+    return fs.readFileSync(p, "utf8");
   } catch {
     return "";
   }
 }
 
-// Subagents receive only their prompt string, so the tone skill must be read
-// Node-side and injected as prompt text. Without this the "your voice" wedge
-// has no voice source at generation time.
-function loadToneSkill(): string {
-  try {
-    return fs.readFileSync("skills/tone/SKILL.md", "utf8");
-  } catch {
-    return "";
-  }
-}
-
-function systemPrompt(): QueryOptions["systemPrompt"] {
-  return { type: "preset", preset: "claude_code", append: loadPersistentRules() };
-}
-
-// Each pack agent file is loaded as a programmatic subagent. Subagents get read
-// tools only so the write path stays with the orchestrator run.
-function loadAgents(): Record<string, AgentDefinition> | undefined {
-  try {
-    const files = fs.readdirSync("agents").filter((f) => f.endsWith(".md"));
-    const out: Record<string, AgentDefinition> = {};
-    for (const f of files) {
-      const name = f.replace(/\.md$/, "");
-      const base = fs.readFileSync(path.join("agents", f), "utf8");
-      const prompt =
-        name === "content-writer"
-          ? `${base}\n\n## Tone skill (obey exactly)\n${loadToneSkill()}`
-          : base;
-      out[name] = {
-        description: `SignalCMO ${name} subagent`,
-        prompt,
-        tools: ["mcp__reads__grok_research", "mcp__reads__notion_query"],
-      };
-    }
-    return Object.keys(out).length ? out : undefined;
-  } catch {
-    return undefined;
-  }
-}
-
-function loadLoopBudget(loop: string): { maxTurns: number; maxBudgetUsd: number } {
-  const def = { maxTurns: 25, maxBudgetUsd: 1.5 };
-  try {
-    const raw = fs.readFileSync("config/schedule.yaml", "utf8");
-    const doc = parseYaml(raw) as
-      | { loops?: Record<string, { max_turns?: number; budget_usd?: number }> }
-      | null;
-    const l = doc?.loops?.[loop];
-    if (l) {
-      return {
-        maxTurns: l.max_turns ?? def.maxTurns,
-        maxBudgetUsd: l.budget_usd ?? def.maxBudgetUsd,
-      };
-    }
-  } catch {
-    // fall through to defaults
-  }
-  return def;
-}
-
-// In-process read tools with real zod schemas so the model reliably passes
-// named args (an empty schema strips every key at validation time). These are
-// read-only; the only write path is the remote write-server.
-function buildReadServer(imageHolder: { url: string }) {
-  const grokTool = tool(
-    "grok_research",
-    "Research X/Twitter and the web via Grok.",
-    { brief: z.string() },
-    async (args) => {
-      const res = await research({ brief: args.brief });
-      return { content: [{ type: "text" as const, text: JSON.stringify(res) }] };
-    },
-  );
-
-  const notionTool = tool(
-    "notion_query",
-    "Read a Notion data source by name (for example Learnings).",
-    { dataSource: z.string(), filter: z.record(z.string(), z.unknown()).optional() },
-    async (args) => {
-      const dsId = await resolveDataSourceId(args.dataSource);
-      const rows = await queryDataSource(dsId, args.filter);
-      return { content: [{ type: "text" as const, text: JSON.stringify(rows) }] };
-    },
-  );
-
-  const imageTool = tool(
-    "zero_generate_image",
-    "Generate a post image via Zero. Returns the hosted URL.",
-    { prompt: z.string() },
-    async (args) => {
-      const out = (await generateImage(args.prompt)) as unknown;
-      const url =
-        typeof out === "string"
-          ? out
-          : String(
-              (out as { url?: string; mediaUrl?: string }).url ??
-                (out as { url?: string; mediaUrl?: string }).mediaUrl ??
-                "",
-            );
-      imageHolder.url = url;
-      return { content: [{ type: "text" as const, text: url || "image generation failed" }] };
-    },
-  );
-
-  return createSdkMcpServer({
-    name: "reads",
-    version: "1.0.0",
-    tools: [grokTool, notionTool, imageTool],
-  });
-}
-
-function baseOptions(
-  readServer: ReturnType<typeof buildReadServer>,
-  allowedTools: string[],
-  loop: string,
-  resume?: string,
-): QueryOptions {
-  const budget = loadLoopBudget(loop);
-  const options: QueryOptions = {
-    systemPrompt: systemPrompt(),
-    mcpServers: {
-      reads: readServer,
-      writeguard: {
-        type: "http",
-        url: WRITEGUARD_URL,
-        alwaysLoad: true,
-        headers: process.env.WRITEGUARD_TOKEN
-          ? { Authorization: `Bearer ${process.env.WRITEGUARD_TOKEN}` }
-          : {},
+// Read-only tools the drafting model may call. The write path is never exposed
+// here; posting goes through the write-server after human approval.
+const READ_TOOLS: ToolSpec[] = [
+  {
+    type: "function",
+    function: {
+      name: "grok_research",
+      description: "Research X/Twitter and the web via Grok. Returns findings and citations.",
+      parameters: {
+        type: "object",
+        properties: { brief: { type: "string", description: "what to research" } },
+        required: ["brief"],
       },
     },
-    hooks: buildHooks(),
-    allowedTools,
-    maxTurns: budget.maxTurns,
-    maxBudgetUsd: budget.maxBudgetUsd,
-  };
-  const agents = loadAgents();
-  if (agents) options.agents = agents;
-  if (resume) options.resume = resume;
-  return options;
-}
+  },
+  {
+    type: "function",
+    function: {
+      name: "notion_query",
+      description: "Read a Notion data source by name, for example Learnings.",
+      parameters: {
+        type: "object",
+        properties: { dataSource: { type: "string" } },
+        required: ["dataSource"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "zero_generate_image",
+      description: "Generate a post image via Zero. Returns the hosted image URL.",
+      parameters: {
+        type: "object",
+        properties: { prompt: { type: "string", description: "image description" } },
+        required: ["prompt"],
+      },
+    },
+  },
+];
 
-// The SDK yields a terminal result message (type "result") that may carry an
-// error subtype instead of throwing, so success is derived from that message.
-// Genuine throws are also caught and reported as failure.
-async function drive(
-  prompt: string,
-  options: QueryOptions,
-): Promise<{ text: string; sessionId?: string; ok: boolean }> {
-  let text = "";
-  let sessionId: string | undefined;
-  let ok = false;
+async function execTool(
+  name: string,
+  args: Record<string, unknown>,
+  imageHolder: { url: string },
+): Promise<string> {
   try {
-    for await (const m of query({ prompt, options })) {
-      const msg = m as unknown as {
-        session_id?: string;
-        type?: string;
-        subtype?: string;
-        is_error?: boolean;
-        result?: string;
-      };
-      if (msg.session_id) sessionId = msg.session_id;
-      if (msg.type === "result") {
-        ok = msg.subtype === "success" && msg.is_error !== true;
-        if (typeof msg.result === "string") text = msg.result;
-      }
+    if (name === "grok_research") {
+      return JSON.stringify(await research({ brief: String(args.brief ?? "") }));
     }
+    if (name === "notion_query") {
+      const ds = await resolveDataSourceId(String(args.dataSource ?? ""));
+      return JSON.stringify(await queryDataSource(ds));
+    }
+    if (name === "zero_generate_image") {
+      const out = (await generateImage(String(args.prompt ?? ""))) as {
+        url?: string;
+        mediaUrl?: string;
+      };
+      imageHolder.url = out.url ?? out.mediaUrl ?? "";
+      return imageHolder.url || "image generation failed";
+    }
+    return `unknown tool ${name}`;
   } catch (e) {
-    console.error("[orchestrator] query run failed:", errMsg(e));
-    ok = false;
+    return `tool ${name} error: ${errMsg(e)}`;
   }
-  return { text, sessionId, ok };
 }
 
-function newId(prefix: string): string {
-  return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+// Manual OpenAI-style tool-calling loop against AkashML (open model). Replaces
+// the Claude Agent SDK: the model may call read tools; each result is fed back
+// until it returns a final text message with no tool calls.
+async function draftLoop(
+  system: string,
+  user: string,
+  imageHolder: { url: string },
+  maxTurns = 6,
+): Promise<string> {
+  const messages: ChatMessage[] = [
+    { role: "system", content: system },
+    { role: "user", content: user },
+  ];
+  for (let turn = 0; turn < maxTurns; turn++) {
+    const msg = await chat({ messages, tools: READ_TOOLS });
+    messages.push(msg);
+    if (msg.tool_calls && msg.tool_calls.length > 0) {
+      for (const tc of msg.tool_calls) {
+        let args: Record<string, unknown> = {};
+        try {
+          args = JSON.parse(tc.function.arguments || "{}") as Record<string, unknown>;
+        } catch {
+          args = {};
+        }
+        const result = await execTool(tc.function.name, args, imageHolder);
+        messages.push({
+          role: "tool",
+          tool_call_id: tc.id,
+          name: tc.function.name,
+          content: result,
+        });
+      }
+      continue;
+    }
+    return (msg.content ?? "").trim();
+  }
+  const last = [...messages].reverse().find((m) => m.role === "assistant" && m.content);
+  return (last?.content ?? "").trim();
 }
 
-// RUN 1: draft only. Reads recent Learnings and injects them, generates an image
-// through the read tool, persists a pending draft, and hands it to Telegram. It
-// never posts; posting happens in a separate run after human approval.
+// RUN 1: draft only. Builds the drafting system prompt from the persistent
+// rules, the content-writer role, and the tone skill (injected as text since
+// there are no SDK subagents). Reads recent Learnings and injects them. Never
+// posts.
 export async function runContentDraft(input?: {
   slot?: string;
   goal?: string;
-}): Promise<{ draftId: string; sessionId?: string }> {
+}): Promise<{ draftId: string }> {
   const store = getStore();
   const learnings = store.recentLearnings(10);
   const learningsText = learnings.length
-    ? learnings
-        .map((l) => `- [${l.id}] (${l.what}) ${l.observed} -> ${l.hypothesis}`)
-        .join("\n")
+    ? learnings.map((l) => `- [${l.id}] (${l.what}) ${l.observed} -> ${l.hypothesis}`).join("\n")
     : "none yet";
 
-  const imageHolder = { url: "" };
-  const readServer = buildReadServer(imageHolder);
-  const tone = loadToneSkill();
-  const prompt = [
+  const system = [
+    readFileSafe("config/persistent-rules.md"),
+    readFileSafe("agents/content-writer.md"),
+    "## Tone skill (obey exactly)",
+    readFileSafe("skills/tone/SKILL.md"),
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+
+  const user = [
     "Draft one original X post in the principal voice for today.",
-    tone ? `Tone skill (obey exactly):\n${tone}` : "",
     input?.slot ? `Target slot: ${input.slot}.` : "",
     input?.goal ? `Primary goal: ${input.goal}.` : "",
     "Recent Learnings to apply (name the Learning id you used):",
     learningsText,
-    "Use grok_research for a fresh signal brief and notion_query for extra context if useful.",
+    "You may call grok_research for a fresh signal brief and notion_query for context.",
     "Call zero_generate_image once with a prompt for a matching image.",
-    "Do not post. Return only the final post text as your last message.",
+    "Then reply with ONLY the final post text, no preamble.",
   ]
     .filter(Boolean)
     .join("\n");
 
-  const { text, sessionId, ok } = await drive(
-    prompt,
-    baseOptions(readServer, [...READ_TOOLS, "Task"], "content"),
-  );
-  if (!ok || !text.trim()) {
-    console.error("[orchestrator] draft run failed or empty; not sending for approval");
-    return { draftId: "", sessionId };
+  const imageHolder = { url: "" };
+  let text = "";
+  try {
+    text = await draftLoop(system, user, imageHolder);
+  } catch (e) {
+    console.error("[orchestrator] draft run failed:", errMsg(e));
+  }
+  if (!text) {
+    console.error("[orchestrator] empty draft; not sending for approval");
+    return { draftId: "" };
   }
 
   const now = new Date().toISOString();
-  const draftId = newId("d");
+  const draftId = `d_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
   const draft: Draft = {
     id: draftId,
     type: "post",
-    text: text.trim(),
+    text,
     mediaUrl: imageHolder.url || undefined,
     slot: input?.slot,
     status: "pending_approval",
-    sessionId,
     appliedLearningId: learnings[0]?.id,
     createdAt: now,
     updatedAt: now,
@@ -277,49 +196,31 @@ export async function runContentDraft(input?: {
   } catch (e) {
     console.error("[orchestrator] telegram send failed:", errMsg(e));
   }
-  return { draftId, sessionId };
+  return { draftId };
 }
 
-function extractPostId(text: string): string | undefined {
-  const keyed = text.match(/"?(?:postId|id|tweet_id)"?\s*[:=]\s*"?(\d{5,25})"?/i);
-  if (keyed) return keyed[1];
-  const bare = text.match(/\b(\d{15,25})\b/);
-  return bare ? bare[1] : undefined;
-}
-
-// RUN 2: post an approved draft. Resumes the draft session when one exists. The
-// only posting path is the mcp__writeguard__post_tweet tool. The write-server
-// uploads media, records the Post row, bumps the daily counter, and enqueues the
-// impact jobs, so this run does not touch the store; it only reports the id.
+// RUN 2: publish an approved draft. The human already approved, so posting is
+// mechanical: call the write-server, which holds the credentials and enforces
+// every guard. No model turn is needed.
 export async function runContentPost(draftId: string): Promise<{ postId?: string }> {
-  const store = getStore();
-  const draft = store.getDraft(draftId);
-  if (!draft) {
-    console.error(`[orchestrator] runContentPost: unknown draft ${draftId}`);
+  const url = process.env.WRITEGUARD_URL ?? "http://localhost:8787/post";
+  try {
+    const res = await fetch(url, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${requireEnv("WRITEGUARD_TOKEN")}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ draftId }),
+    });
+    const data = (await res.json().catch(() => ({}))) as { postId?: string; error?: string };
+    if (!res.ok) {
+      console.error(`[orchestrator] post failed ${res.status}:`, data.error ?? "");
+      return {};
+    }
+    return { postId: data.postId };
+  } catch (e) {
+    console.error("[orchestrator] runContentPost failed:", errMsg(e));
     return {};
   }
-
-  const imageHolder = { url: draft.mediaUrl ?? "" };
-  const readServer = buildReadServer(imageHolder);
-  const prompt = [
-    `Publish the approved draft ${draftId}.`,
-    `Call mcp__writeguard__post_tweet with {"draftId":"${draftId}"} exactly once.`,
-    "Do not change the approved text. Report the returned tweet id.",
-  ].join("\n");
-
-  const { text } = await drive(
-    prompt,
-    baseOptions(
-      readServer,
-      ["mcp__writeguard__post_tweet", "Task"],
-      "tg_webhook",
-      draft.sessionId,
-    ),
-  );
-
-  const postId = extractPostId(text);
-  if (!postId) {
-    console.error(`[orchestrator] runContentPost: no tweet id returned for ${draftId}`);
-  }
-  return { postId };
 }
