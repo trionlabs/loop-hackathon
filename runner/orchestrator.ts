@@ -95,7 +95,7 @@ async function draftLoop(
   system: string,
   user: string,
   imageHolder: { url: string },
-  maxTurns = 6,
+  maxTurns = 4,
 ): Promise<string> {
   const messages: ChatMessage[] = [
     { role: "system", content: system },
@@ -157,9 +157,9 @@ export async function runContentDraft(input?: {
     input?.goal ? `Primary goal: ${input.goal}.` : "",
     "Recent Learnings to apply (name the Learning id you used):",
     learningsText,
-    "You may call grok_research for a fresh signal brief and notion_query for context.",
-    "Call zero_generate_image once with a prompt for a matching image.",
-    "Then reply with ONLY the final post text, no preamble.",
+    "Call grok_research at most once for a fresh signal brief (skip if not needed).",
+    "Call zero_generate_image at most once for a matching image.",
+    "Then reply with ONLY the final post text, no preamble. Do not call more tools after drafting.",
   ]
     .filter(Boolean)
     .join("\n");
