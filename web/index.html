@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>SignalCMO Dashboard</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="app">
+    <header class="topbar">
+      <div class="brand">
+        <span class="logo">S</span>
+        <div class="brand-text">
+          <h1>SignalCMO</h1>
+          <p class="tagline">AI-native CMO control room</p>
+        </div>
+      </div>
+      <div class="health" id="health">
+        <span class="dot" id="health-dot"></span>
+        <span id="health-label">connecting</span>
+      </div>
+    </header>
+
+    <div class="grid">
+      <section class="panel span-2" id="panel-drafts">
+        <div class="panel-head">
+          <h2>Draft queue</h2>
+          <span class="count" id="drafts-count">0</span>
+        </div>
+        <div class="panel-body" id="drafts"></div>
+      </section>
+
+      <section class="panel" id="panel-signal">
+        <div class="panel-head">
+          <h2>Signal accounts</h2>
+          <span class="count" id="signal-count">0</span>
+        </div>
+        <div class="panel-body" id="signal"></div>
+      </section>
+
+      <section class="panel" id="panel-loop">
+        <div class="panel-head">
+          <h2>Self-improvement loop</h2>
+        </div>
+        <div class="panel-body" id="loop"></div>
+      </section>
+
+      <section class="panel span-2" id="panel-learnings">
+        <div class="panel-head">
+          <h2>Learnings feed</h2>
+          <span class="count" id="learnings-count">0</span>
+        </div>
+        <div class="panel-body" id="learnings"></div>
+      </section>
+    </div>
+
+    <footer class="foot">
+      <span id="foot-status">idle</span>
+    </footer>
+  </div>
+  <script src="app.js"></script>
+</body>
+</html>
