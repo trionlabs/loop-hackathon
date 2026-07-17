@@ -19,4 +19,4 @@ export const limits = {
 
 export const NOTION_VERSION = "2026-03-11";
 export const XAI_BASE = "https://api.x.ai/v1";
-export const X_API_BASE = "https://api.twitter.com/2";
+export const X_API_BASE = "https://api.x.com/2";
