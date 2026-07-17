@@ -16,7 +16,7 @@ services:
     env:
       - NODE_ENV=production
       # Set at deploy time in the Akash console (throwaway demo-scoped keys):
-      # ANTHROPIC_API_KEY, XAI_API_KEY, NOTION_TOKEN, TG_BOT_TOKEN, TG_CHAT_ID,
+      # AKASHML_API_KEY, XAI_API_KEY, NOTION_TOKEN, TG_BOT_TOKEN, TG_CHAT_ID,
       # X_API_KEY, X_API_SECRET, X_ACCESS_TOKEN, X_ACCESS_SECRET,
       # WRITEGUARD_URL, WRITEGUARD_TOKEN.
     expose:
