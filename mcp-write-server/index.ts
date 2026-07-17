@@ -92,8 +92,15 @@ async function postDraft(draftId: string): Promise<{ ok: boolean; postId?: strin
 
   let mediaIds: string[] | undefined;
   if (draft.mediaUrl) {
-    const media = await uploadMedia({ url: draft.mediaUrl, mime: mimeFromUrl(draft.mediaUrl) });
-    mediaIds = [media.mediaId];
+    try {
+      const media = await uploadMedia({ url: draft.mediaUrl, mime: mimeFromUrl(draft.mediaUrl) });
+      mediaIds = [media.mediaId];
+    } catch (e) {
+      console.error(
+        "[writeguard] media upload failed, posting text-only:",
+        e instanceof Error ? e.message : String(e),
+      );
+    }
   }
 
   const posted = await postTweet({ text, mediaIds });
