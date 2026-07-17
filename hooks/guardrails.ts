@@ -1,6 +1,4 @@
-import fs from "node:fs";
 import path from "node:path";
-import { parse as parseYaml } from "yaml";
 import type {
   HookCallback,
   HookCallbackMatcher,
@@ -9,6 +7,13 @@ import type {
 } from "@anthropic-ai/claude-agent-sdk";
 import { getStore } from "../shared/store.js";
 import { limits } from "../shared/env.js";
+import {
+  effectiveText,
+  isDuplicate,
+  loadAutonomy,
+  loadEmbargo,
+  matchEmbargo,
+} from "../shared/config.js";
 import type { ContentType } from "../shared/types.js";
 
 // The write path the agent can reach is the remote MCP write-server registered
@@ -39,78 +44,6 @@ function allow(reason: string) {
   };
 }
 
-function trigrams(text: string): Set<string> {
-  const words = text
-    .toLowerCase()
-    .replace(/[^a-z0-9\s]/g, " ")
-    .split(/\s+/)
-    .filter(Boolean);
-  const grams = new Set<string>();
-  for (let i = 0; i + 2 < words.length; i++) {
-    grams.add(`${words[i]} ${words[i + 1]} ${words[i + 2]}`);
-  }
-  if (words.length > 0 && words.length < 3) grams.add(words.join(" "));
-  return grams;
-}
-
-function jaccard(a: Set<string>, b: Set<string>): number {
-  if (a.size === 0 || b.size === 0) return 0;
-  let inter = 0;
-  for (const g of a) if (b.has(g)) inter++;
-  const union = a.size + b.size - inter;
-  return union === 0 ? 0 : inter / union;
-}
-
-// Duplicate when any recent post shares a 3-gram Jaccard of 0.5 or more.
-function isDuplicate(text: string, recent: string[]): boolean {
-  const cand = trigrams(text);
-  for (const r of recent) {
-    if (jaccard(cand, trigrams(r)) >= 0.5) return true;
-  }
-  return false;
-}
-
-interface EmbargoConfig {
-  topics: string[];
-  crisis: string[];
-}
-
-function toStringArray(v: unknown): string[] {
-  if (!Array.isArray(v)) return [];
-  return v.filter((x): x is string => typeof x === "string");
-}
-
-function loadEmbargo(): EmbargoConfig {
-  try {
-    const raw = fs.readFileSync("config/embargo.yaml", "utf8");
-    const doc = parseYaml(raw) as Record<string, unknown> | null;
-    return {
-      topics: toStringArray(doc?.["topics"]),
-      crisis: toStringArray(doc?.["crisis_keywords"] ?? doc?.["crisis"]),
-    };
-  } catch {
-    return { topics: [], crisis: [] };
-  }
-}
-
-function matchEmbargo(text: string, cfg: EmbargoConfig): string | null {
-  const hay = text.toLowerCase();
-  for (const term of [...cfg.topics, ...cfg.crisis]) {
-    const t = term.toLowerCase().trim();
-    if (t && hay.includes(t)) return term;
-  }
-  return null;
-}
-
-function loadAutonomy(): Partial<Record<ContentType, boolean>> {
-  try {
-    const raw = fs.readFileSync("config/autonomy.json", "utf8");
-    return JSON.parse(raw) as Partial<Record<ContentType, boolean>>;
-  } catch {
-    return {};
-  }
-}
-
 function dailyLimit(type: ContentType): number {
   return type === "reply" ? limits.maxRepliesPerDay : limits.maxPostsPerDay;
 }
@@ -124,7 +57,8 @@ const logTool: HookCallback = async (input) => {
 };
 
 // Fail closed: any throw denies. Trusts only draftId from the tool input and
-// re-derives every check from the local store and the on-disk config.
+// re-derives every check from the local store and the on-disk config. Screens
+// the text that will actually post (the human edit when present).
 const guardPostTweet: HookCallback = async (input) => {
   try {
     if (input.hook_event_name !== "PreToolUse") return {};
@@ -142,10 +76,11 @@ const guardPostTweet: HookCallback = async (input) => {
     if (!draft) return deny(`unknown draft ${draftId}`);
 
     const approval = store.getApproval(draftId);
+    if (approval?.decision === "rejected") return deny("draft was rejected by a human");
+
     const approved =
       approval?.decision === "approved" || approval?.decision === "edited";
-    const autonomy = loadAutonomy();
-    const autopilot = autonomy[draft.type] === true;
+    const autopilot = loadAutonomy()[draft.type] === true;
     if (!approved && !autopilot) {
       return deny("no human approval and autopilot is off for this type");
     }
@@ -155,11 +90,14 @@ const guardPostTweet: HookCallback = async (input) => {
       return deny(`daily max reached for ${draft.type} (${limit})`);
     }
 
-    if (isDuplicate(draft.text, store.recentPostedTexts(90))) {
+    const text = effectiveText(draft, approval);
+    if (isDuplicate(text, store.recentPostedTexts(90))) {
       return deny("draft too similar to a post from the last 90 days");
     }
 
-    const hit = matchEmbargo(draft.text, loadEmbargo());
+    const emb = loadEmbargo();
+    if (!emb) return deny("embargo config unavailable, failing closed");
+    const hit = matchEmbargo(text, emb);
     if (hit) return deny(`embargoed topic present: ${hit}`);
 
     return allow("all server-side guards passed");
