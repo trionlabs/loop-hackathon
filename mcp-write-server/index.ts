@@ -245,9 +245,13 @@ export async function startWriteServer(): Promise<void> {
     }
   });
 
+  // Loopback by default. Set WRITE_SERVER_HOST=0.0.0.0 when Pomerium runs in
+  // Docker and must reach this process via host.docker.internal; the bearer
+  // token and the proxy remain the gate.
+  const host = optionalEnv("WRITE_SERVER_HOST") ?? "127.0.0.1";
   const port = Number(optionalEnv("WRITE_SERVER_PORT") ?? 8787);
   await new Promise<void>((resolve) => {
-    app.listen(port, "127.0.0.1", () => resolve());
+    app.listen(port, host, () => resolve());
   });
 }
 
