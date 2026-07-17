@@ -1,4 +1,3 @@
-import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import express from "express";
@@ -17,24 +16,6 @@ const startedAt = new Date().toISOString();
 
 function errMsg(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
-}
-
-// The JSON store has no accessor for signal accounts, so read them straight from
-// the store file. The path mirrors JsonStore's default ("data/store.json",
-// relative to the process cwd). Anything unexpected falls back to an empty list.
-function readSignalAccounts(): SignalAccount[] {
-  try {
-    const raw = fs.readFileSync("data/store.json", "utf8");
-    const parsed = JSON.parse(raw) as { signalAccounts?: unknown };
-    const accts = parsed.signalAccounts;
-    if (Array.isArray(accts)) return accts as SignalAccount[];
-    if (accts && typeof accts === "object") {
-      return Object.values(accts) as SignalAccount[];
-    }
-    return [];
-  } catch {
-    return [];
-  }
 }
 
 interface StatePayload {
@@ -57,16 +38,8 @@ function readState(): StatePayload {
     const store = getStore();
     base.drafts = store.listDrafts();
     base.learnings = store.recentLearnings(50);
-    base.signalAccounts = readSignalAccounts();
-    // Posts have no list accessor on the Store; pull them from the store file so
-    // the self-improvement panel can join drafts to their published posts.
-    try {
-      const raw = fs.readFileSync("data/store.json", "utf8");
-      const parsed = JSON.parse(raw) as { posts?: Record<string, Post> };
-      base.posts = parsed.posts ? Object.values(parsed.posts) : [];
-    } catch {
-      base.posts = [];
-    }
+    base.signalAccounts = store.listSignalAccounts();
+    base.posts = store.listPosts();
   } catch (e) {
     console.error("[web] readState failed:", errMsg(e));
   }
@@ -99,6 +72,20 @@ export function createApp(): express.Express {
       return;
     }
 
+    const store = getStore();
+    const draft = store.getDraft(draftId);
+    if (!draft) {
+      res.status(404).json({ ok: false, error: "unknown draft" });
+      return;
+    }
+    // A UI approval is a Telegram approval on another transport: act only on a
+    // still-pending draft with no prior decision, so a double-click cannot
+    // double-post.
+    if (draft.status !== "pending_approval" || store.getApproval(draftId)) {
+      res.status(409).json({ ok: false, error: "already decided" });
+      return;
+    }
+
     const record: ApprovalRecord = {
       draftId,
       decision,
@@ -107,7 +94,7 @@ export function createApp(): express.Express {
       decidedBy: "web-ui",
     };
     try {
-      getStore().putApproval(record);
+      store.putApproval(record);
     } catch (e) {
       console.error("[web] putApproval failed:", errMsg(e));
       res.status(500).json({ ok: false, error: "store write failed" });
@@ -135,7 +122,7 @@ export async function startUiServer(): Promise<void> {
   const app = createApp();
   const port = Number(process.env.UI_PORT ?? 4000);
   await new Promise<void>((resolve) => {
-    app.listen(port, () => {
+    app.listen(port, "127.0.0.1", () => {
       console.log(`[web] dashboard listening on :${port}`);
       resolve();
     });
