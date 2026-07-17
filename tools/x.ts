@@ -50,7 +50,7 @@ function buildUrl(base: string, params?: Record<string, string>): string {
 export async function verifyCredentials(): Promise<{ username: string }> {
   const url = `${X_API_BASE}/users/me`;
   const res = await fetch(url, { headers: authHeader("GET", url) });
-  if (!res.ok) throw new Error(`x verifyCredentials ${res.status}`);
+  if (!res.ok) throw new Error(`x verifyCredentials ${res.status} ${await res.text()}`);
   const body = (await res.json()) as { data?: { username?: string } };
   return { username: body.data?.username ?? "" };
 }
@@ -81,7 +81,7 @@ export async function uploadMedia(src: {
     headers: authHeader("POST", url),
     body: form,
   });
-  if (!res.ok) throw new Error(`x uploadMedia ${res.status}`);
+  if (!res.ok) throw new Error(`x uploadMedia ${res.status} ${await res.text()}`);
   const body = (await res.json()) as {
     data?: { id?: string; media_id?: string; media_id_string?: string };
   };
@@ -112,7 +112,7 @@ export async function postTweet(input: {
     },
     body: JSON.stringify(payload),
   });
-  if (!res.ok) throw new Error(`x postTweet ${res.status}`);
+  if (!res.ok) throw new Error(`x postTweet ${res.status} ${await res.text()}`);
   const body = (await res.json()) as { data?: { id?: string } };
   if (!body.data?.id) throw new Error("x postTweet missing id");
   return { id: body.data.id };
@@ -124,7 +124,7 @@ export async function getMetrics(tweetId: string): Promise<PostMetrics> {
   const res = await fetch(buildUrl(base, params), {
     headers: authHeader("GET", base, params),
   });
-  if (!res.ok) throw new Error(`x getMetrics ${res.status}`);
+  if (!res.ok) throw new Error(`x getMetrics ${res.status} ${await res.text()}`);
   const body = (await res.json()) as {
     data?: {
       public_metrics?: Record<string, number>;
