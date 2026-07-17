@@ -1,0 +1,40 @@
+{
+  "name": "signalcmo",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "AI-native CMO operating one X account through closed self-improving agent loops",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsx watch runner/index.ts",
+    "start": "node dist/runner/index.js",
+    "loop:content": "tsx runner/run-loop.ts content",
+    "loop:signal": "tsx runner/run-loop.ts signal",
+    "loop:impact": "tsx runner/run-loop.ts impact",
+    "keys:check": "tsx scripts/keys-wizard.ts",
+    "mcp:write": "tsx mcp-write-server/index.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "^0.3.212",
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "@notionhq/client": "^5.23.2",
+    "better-sqlite3": "^11.0.0",
+    "dotenv": "^16.4.5",
+    "execa": "^9.0.0",
+    "express": "^4.19.2",
+    "node-cron": "^3.0.3",
+    "oauth-1.0a": "^2.2.6",
+    "undici": "^6.19.0",
+    "yaml": "^2.4.5"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.10",
+    "@types/express": "^4.17.21",
+    "@types/node": "^20.14.0",
+    "@types/node-cron": "^3.0.11",
+    "tsx": "^4.16.0",
+    "typescript": "^5.5.0"
+  },
+  "engines": { "node": ">=18" }
+}
