@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { parse as parseYaml } from "yaml";
+import { z } from "zod";
 import {
   query,
   tool,
@@ -36,6 +37,17 @@ function loadPersistentRules(): string {
   }
 }
 
+// Subagents receive only their prompt string, so the tone skill must be read
+// Node-side and injected as prompt text. Without this the "your voice" wedge
+// has no voice source at generation time.
+function loadToneSkill(): string {
+  try {
+    return fs.readFileSync("skills/tone/SKILL.md", "utf8");
+  } catch {
+    return "";
+  }
+}
+
 function systemPrompt(): QueryOptions["systemPrompt"] {
   return { type: "preset", preset: "claude_code", append: loadPersistentRules() };
 }
@@ -48,9 +60,14 @@ function loadAgents(): Record<string, AgentDefinition> | undefined {
     const out: Record<string, AgentDefinition> = {};
     for (const f of files) {
       const name = f.replace(/\.md$/, "");
+      const base = fs.readFileSync(path.join("agents", f), "utf8");
+      const prompt =
+        name === "content-writer"
+          ? `${base}\n\n## Tone skill (obey exactly)\n${loadToneSkill()}`
+          : base;
       out[name] = {
         description: `SignalCMO ${name} subagent`,
-        prompt: fs.readFileSync(path.join("agents", f), "utf8"),
+        prompt,
         tools: ["mcp__reads__grok_research", "mcp__reads__notion_query"],
       };
     }
@@ -80,40 +97,37 @@ function loadLoopBudget(loop: string): { maxTurns: number; maxBudgetUsd: number 
   return def;
 }
 
-// In-process read tools. Schemas are empty objects because zod is not a
-// resolvable dependency here; handlers read loosely typed args and the tool
-// descriptions tell the model which fields to send.
+// In-process read tools with real zod schemas so the model reliably passes
+// named args (an empty schema strips every key at validation time). These are
+// read-only; the only write path is the remote write-server.
 function buildReadServer(imageHolder: { url: string }) {
   const grokTool = tool(
     "grok_research",
-    'Research X/Twitter and the web via Grok. Send {"brief": "what to find"}.',
-    {},
+    "Research X/Twitter and the web via Grok.",
+    { brief: z.string() },
     async (args) => {
-      const brief = String((args as Record<string, unknown>)["brief"] ?? "");
-      const res = await research({ brief });
+      const res = await research({ brief: args.brief });
       return { content: [{ type: "text" as const, text: JSON.stringify(res) }] };
     },
   );
 
   const notionTool = tool(
     "notion_query",
-    'Read a Notion data source. Send {"dataSource": "Learnings", "filter": {}}.',
-    {},
+    "Read a Notion data source by name (for example Learnings).",
+    { dataSource: z.string(), filter: z.record(z.string(), z.unknown()).optional() },
     async (args) => {
-      const a = args as Record<string, unknown>;
-      const dsId = await resolveDataSourceId(String(a["dataSource"] ?? ""));
-      const rows = await queryDataSource(dsId, a["filter"] as Record<string, unknown> | undefined);
+      const dsId = await resolveDataSourceId(args.dataSource);
+      const rows = await queryDataSource(dsId, args.filter);
       return { content: [{ type: "text" as const, text: JSON.stringify(rows) }] };
     },
   );
 
   const imageTool = tool(
     "zero_generate_image",
-    'Generate a post image via Zero. Send {"prompt": "image description"}. Returns the hosted URL.',
-    {},
+    "Generate a post image via Zero. Returns the hosted URL.",
+    { prompt: z.string() },
     async (args) => {
-      const prompt = String((args as Record<string, unknown>)["prompt"] ?? "");
-      const out = (await generateImage(prompt)) as unknown;
+      const out = (await generateImage(args.prompt)) as unknown;
       const url =
         typeof out === "string"
           ? out
@@ -148,6 +162,7 @@ function baseOptions(
       writeguard: {
         type: "http",
         url: WRITEGUARD_URL,
+        alwaysLoad: true,
         headers: process.env.WRITEGUARD_TOKEN
           ? { Authorization: `Bearer ${process.env.WRITEGUARD_TOKEN}` }
           : {},
@@ -164,23 +179,36 @@ function baseOptions(
   return options;
 }
 
-// query() throws on error_max_turns, so the whole iteration is guarded.
+// The SDK yields a terminal result message (type "result") that may carry an
+// error subtype instead of throwing, so success is derived from that message.
+// Genuine throws are also caught and reported as failure.
 async function drive(
   prompt: string,
   options: QueryOptions,
-): Promise<{ text: string; sessionId?: string }> {
+): Promise<{ text: string; sessionId?: string; ok: boolean }> {
   let text = "";
   let sessionId: string | undefined;
+  let ok = false;
   try {
     for await (const m of query({ prompt, options })) {
-      const msg = m as unknown as { session_id?: string; type?: string; result?: string };
+      const msg = m as unknown as {
+        session_id?: string;
+        type?: string;
+        subtype?: string;
+        is_error?: boolean;
+        result?: string;
+      };
       if (msg.session_id) sessionId = msg.session_id;
-      if (msg.type === "result" && typeof msg.result === "string") text = msg.result;
+      if (msg.type === "result") {
+        ok = msg.subtype === "success" && msg.is_error !== true;
+        if (typeof msg.result === "string") text = msg.result;
+      }
     }
   } catch (e) {
     console.error("[orchestrator] query run failed:", errMsg(e));
+    ok = false;
   }
-  return { text, sessionId };
+  return { text, sessionId, ok };
 }
 
 function newId(prefix: string): string {
@@ -204,8 +232,10 @@ export async function runContentDraft(input?: {
 
   const imageHolder = { url: "" };
   const readServer = buildReadServer(imageHolder);
+  const tone = loadToneSkill();
   const prompt = [
     "Draft one original X post in the principal voice for today.",
+    tone ? `Tone skill (obey exactly):\n${tone}` : "",
     input?.slot ? `Target slot: ${input.slot}.` : "",
     input?.goal ? `Primary goal: ${input.goal}.` : "",
     "Recent Learnings to apply (name the Learning id you used):",
@@ -217,10 +247,14 @@ export async function runContentDraft(input?: {
     .filter(Boolean)
     .join("\n");
 
-  const { text, sessionId } = await drive(
+  const { text, sessionId, ok } = await drive(
     prompt,
     baseOptions(readServer, [...READ_TOOLS, "Task"], "content"),
   );
+  if (!ok || !text.trim()) {
+    console.error("[orchestrator] draft run failed or empty; not sending for approval");
+    return { draftId: "", sessionId };
+  }
 
   const now = new Date().toISOString();
   const draftId = newId("d");
