@@ -1,0 +1,10 @@
+node_modules
+dist
+data
+.git
+.claude
+docs
+config/.env
+.env
+*.log
+web

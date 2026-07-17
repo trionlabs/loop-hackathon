@@ -1,0 +1,6 @@
+{
+  "signalAccounts": { "database": "DB_ID", "dataSource": "DATA_SOURCE_ID" },
+  "learnings":      { "database": "DB_ID", "dataSource": "DATA_SOURCE_ID" },
+  "posts":          { "database": "DB_ID", "dataSource": "DATA_SOURCE_ID" },
+  "contentCalendar":{ "database": "DB_ID", "dataSource": "DATA_SOURCE_ID" }
+}
