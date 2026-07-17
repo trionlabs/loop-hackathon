@@ -91,7 +91,7 @@ export async function writePageMarkdown(
     await fetch(`${NOTION_BASE}/pages/${pageId}/markdown`, {
       method: "PATCH",
       headers: headers(),
-      body: JSON.stringify({ command: "replace_content", content: markdown }),
+      body: JSON.stringify({ type: "replace_content", replace_content: { new_str: markdown } }),
     }),
     "writePageMarkdown",
   );
