@@ -12,15 +12,14 @@ function env(key: string): string {
   return v;
 }
 
-async function anthropic(): Promise<string> {
-  const res = await fetch("https://api.anthropic.com/v1/models", {
-    headers: {
-      "x-api-key": env("ANTHROPIC_API_KEY"),
-      "anthropic-version": "2023-06-01",
-    },
+async function akashml(): Promise<string> {
+  const base = process.env.AKASHML_BASE_URL ?? "https://api.akashml.com/v1";
+  const res = await fetch(`${base}/models`, {
+    headers: { authorization: `Bearer ${env("AKASHML_API_KEY")}` },
   });
   if (!res.ok) throw new Error(`${res.status} ${await res.text()}`);
-  return "auth ok";
+  const data = (await res.json()) as { data?: unknown[] };
+  return `auth ok, ${data.data?.length ?? 0} models`;
 }
 
 async function xai(): Promise<string> {
@@ -75,7 +74,7 @@ async function x(): Promise<string> {
 }
 
 const checks: Check[] = [
-  { name: "anthropic", run: anthropic },
+  { name: "akashml", run: akashml },
   { name: "xai", run: xai },
   { name: "notion", run: notion },
   { name: "telegram", run: telegram },
