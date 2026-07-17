@@ -230,7 +230,9 @@ export async function runContentDraft(input?: {
 // RUN 2: publish an approved draft. The human already approved, so posting is
 // mechanical: call the write-server, which holds the credentials and enforces
 // every guard. No model turn is needed.
-export async function runContentPost(draftId: string): Promise<{ postId?: string }> {
+export async function runContentPost(
+  draftId: string,
+): Promise<{ postId?: string; error?: string }> {
   const url = process.env.WRITEGUARD_URL ?? "http://localhost:8787/post";
   try {
     const res = await fetch(url, {
@@ -242,13 +244,14 @@ export async function runContentPost(draftId: string): Promise<{ postId?: string
       body: JSON.stringify({ draftId }),
     });
     const data = (await res.json().catch(() => ({}))) as { postId?: string; error?: string };
-    if (!res.ok) {
-      console.error(`[orchestrator] post failed ${res.status}:`, data.error ?? "");
-      return {};
+    if (!res.ok || !data.postId) {
+      const error = data.error ?? `post failed (${res.status})`;
+      console.error(`[orchestrator] post failed:`, error);
+      return { error };
     }
     return { postId: data.postId };
   } catch (e) {
     console.error("[orchestrator] runContentPost failed:", errMsg(e));
-    return {};
+    return { error: errMsg(e) };
   }
 }
