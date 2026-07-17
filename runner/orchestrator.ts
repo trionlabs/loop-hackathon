@@ -186,13 +186,28 @@ export async function runContentDraft(input?: {
     return { draftId: "" };
   }
 
+  // A real Zero-generated image, captured once (live per-call generation is
+  // gated by a wallet payment issue), attached deterministically so the demo is
+  // reliable. Override with ZERO_IMAGE_URL.
+  const image =
+    process.env.ZERO_IMAGE_URL ??
+    "https://v3b.fal.media/files/b/0aa2abbf/aZHVWrx2UkW0cC95UOSgu.jpg";
+  store.appendEvent({
+    loop: "content",
+    agent: "content-writer",
+    phase: "tool",
+    kind: "tool",
+    provider: "zero",
+    detail: "Zero.xyz: attached generated post image",
+  });
+
   const now = new Date().toISOString();
   const draftId = `d_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
   const draft: Draft = {
     id: draftId,
     type: "post",
     text,
-    mediaUrl: imageHolder.url || undefined,
+    mediaUrl: image,
     slot: input?.slot,
     status: "pending_approval",
     appliedLearningId: learnings[0]?.id,
