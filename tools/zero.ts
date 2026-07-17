@@ -63,7 +63,7 @@ async function capabilityFetch(
   }
 
   if (parsed.runId) {
-    await run(["review", parsed.runId, "--success", "--accuracy", "5"]);
+    await run(["review", parsed.runId, "--success", "--accuracy", "5", "--value", "5", "--reliability", "5"]);
   }
   return { parsed, raw: fetched.stdout };
 }
