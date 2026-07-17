@@ -20,6 +20,7 @@ import {
 } from "../shared/config.js";
 import { postTweet, uploadMedia } from "../tools/x.js";
 import { createRow } from "../tools/notion.js";
+import { syncPost } from "../shared/notion-sync.js";
 
 // The write-server is the SOLE holder of write capability and the SINGLE
 // enforcement point for every guardrail. tools/x.ts and tools/notion.ts are
@@ -117,6 +118,8 @@ async function postDraft(draftId: string): Promise<{ ok: boolean; postId?: strin
     };
     store.addImpactJob(job);
   }
+  // Mirror to the Notion visible brain, best effort (never blocks the post).
+  void syncPost(post).catch((e) => console.error("[writeguard] notion sync failed:", e));
   return { ok: true, postId: posted.id };
 }
 
