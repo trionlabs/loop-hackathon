@@ -1,5 +1,5 @@
 import fs from "node:fs";
-import { createRow } from "../tools/notion.js";
+import { archivePage, createRow, queryDataSource } from "../tools/notion.js";
 import type { Learning, Post, SignalAccount } from "./types.js";
 
 // Mirrors the local store into the Notion "visible brain" databases. The
@@ -43,6 +43,21 @@ export async function syncSignalAccount(a: SignalAccount): Promise<void> {
     Rationale: rich(a.rationale),
     LastScored: date(a.lastScored),
   });
+}
+
+// Archive every existing Signal Accounts row so a fresh scout run replaces the
+// generic seed rather than piling on top of it.
+export async function clearNotionSignalAccounts(): Promise<void> {
+  const id = ids()?.signalAccounts.dataSource;
+  if (!id) return;
+  const rows = await queryDataSource(id);
+  for (const r of rows) {
+    const pageId = (r as { id?: string })?.id;
+    if (pageId) {
+      await archivePage(pageId);
+      await new Promise((res) => setTimeout(res, 250));
+    }
+  }
 }
 
 export async function syncLearning(l: Learning): Promise<void> {

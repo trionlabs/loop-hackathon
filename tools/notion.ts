@@ -48,6 +48,17 @@ export async function queryDataSource(
   return body.results ?? [];
 }
 
+export async function archivePage(pageId: string): Promise<void> {
+  await ok(
+    await fetch(`${NOTION_BASE}/pages/${pageId}`, {
+      method: "PATCH",
+      headers: headers(),
+      body: JSON.stringify({ in_trash: true }),
+    }),
+    "archivePage",
+  );
+}
+
 export async function createRow(
   dataSourceId: string,
   properties: Record<string, unknown>,
