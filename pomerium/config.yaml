@@ -1,0 +1,51 @@
+# Pomerium zero-trust gate in front of the SignalCMO write-server.
+#
+# The write-server (mcp-write-server, localhost:8787/mcp) is the sole holder of
+# write capability. Pomerium sits in front of it and enforces per-request,
+# identity-aware policy at the network layer, outside the model. This is the
+# defense-in-depth layer above the in-process PreToolUse hooks: the hooks
+# enforce the dynamic rules (daily cap, duplicate, embargo, kill switch), and
+# Pomerium revokes an entire tool capability by name.
+#
+# CAVEATS to confirm before the demo (MCP support is experimental):
+#   - Use a Pomerium build that ships the flag-gated MCP capability (main).
+#   - Confirm a service-account JWT is accepted for tools/call on an
+#     mcp: server: {} route, and the exact bearer prefix.
+#   - HTTPS is required for routes. Use the built-in pom.run tunnel for a public
+#     hostname, or point authenticate_service_url at a self-hosted service.
+
+runtime_flags:
+  mcp: true
+
+# Generate real values locally and inject them at runtime, never commit them:
+#   head -c 32 /dev/urandom | base64
+shared_secret: REPLACE_WITH_BASE64_32_BYTES
+cookie_secret: REPLACE_WITH_BASE64_32_BYTES
+
+# Easiest identity path for the timebox is Pomerium Zero (hosted authenticate
+# service), so no self-hosted IdP is needed. The headless agent authenticates
+# with a Pomerium service-account JWT that the runner sends as
+# Authorization: Bearer <jwt> to WRITEGUARD_URL.
+authenticate_service_url: https://authenticate.pomerium.app
+
+routes:
+  - from: https://writeguard.REPLACE.pomerium.app
+    to: http://host.docker.internal:8787/mcp
+    name: writeguard
+    mcp:
+      server: {}
+    policy:
+      # Identity check: only the operator gets through. Replace with your own
+      # domain, group, or the service-account subject.
+      allow:
+        and:
+          - domain:
+              is: REPLACE_WITH_YOUR_DOMAIN
+      # Revoke the reserved admin tool at the proxy. mcp_tool matches the MCP
+      # tool NAME only (it cannot read post text), so dynamic limits stay in the
+      # in-process hooks. mcp_tool MUST go under deny: under allow it also blocks
+      # tools/list and breaks the whole session.
+      deny:
+        and:
+          - mcp_tool:
+              is: admin_reset

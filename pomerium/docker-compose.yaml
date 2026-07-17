@@ -1,0 +1,12 @@
+# Runs Pomerium in front of the locally-running write-server. Start the
+# write-server first (pnpm mcp:write on :8787), then `docker compose up` here.
+# Pin the image to a specific digest before the demo; MCP is on the main tag.
+services:
+  pomerium:
+    image: pomerium/pomerium:main
+    volumes:
+      - ./config.yaml:/pomerium/config.yaml:ro
+    ports:
+      - "443:443"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
