@@ -7,6 +7,7 @@ import type {
   ApprovalRecord,
   Draft,
   Learning,
+  LoopEvent,
   Post,
   SignalAccount,
 } from "../shared/types.js";
@@ -24,6 +25,7 @@ interface StatePayload {
   drafts: Draft[];
   learnings: Learning[];
   posts: Post[];
+  events: LoopEvent[];
 }
 
 function readState(): StatePayload {
@@ -33,6 +35,7 @@ function readState(): StatePayload {
     drafts: [],
     learnings: [],
     posts: [],
+    events: [],
   };
   try {
     const store = getStore();
@@ -40,6 +43,7 @@ function readState(): StatePayload {
     base.learnings = store.recentLearnings(50);
     base.signalAccounts = store.listSignalAccounts();
     base.posts = store.listPosts();
+    base.events = store.recentEvents(60);
   } catch (e) {
     console.error("[web] readState failed:", errMsg(e));
   }
@@ -100,6 +104,13 @@ export function createApp(): express.Express {
       res.status(500).json({ ok: false, error: "store write failed" });
       return;
     }
+    store.appendEvent({
+      loop: "approval",
+      agent: "principal",
+      phase: decision,
+      kind: "approval",
+      detail: `draft ${decision} in the dashboard`,
+    });
 
     if (decision === "approved") {
       // A missing-credentials throw here must not lose the recorded approval, so
@@ -113,6 +124,20 @@ export function createApp(): express.Express {
     }
 
     res.json({ ok: true });
+  });
+
+  // Trigger the content loop from the dashboard. Fire-and-forget so the HTTP
+  // response returns immediately; the loop emits events the UI polls.
+  app.post("/api/run-content", async (_req, res) => {
+    try {
+      const mod = await import("../runner/orchestrator.js");
+      void mod
+        .runContentDraft()
+        .catch((e) => console.error("[web] runContentDraft failed:", errMsg(e)));
+      res.json({ ok: true, started: true });
+    } catch (e) {
+      res.status(500).json({ ok: false, error: errMsg(e) });
+    }
   });
 
   return app;

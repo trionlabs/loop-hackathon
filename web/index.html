@@ -16,13 +16,24 @@
           <p class="tagline">AI-native CMO control room</p>
         </div>
       </div>
-      <div class="health" id="health">
-        <span class="dot" id="health-dot"></span>
-        <span id="health-label">connecting</span>
+      <div class="head-right">
+        <button id="run-loop" class="run-btn">Run content loop</button>
+        <div class="health" id="health">
+          <span class="dot" id="health-dot"></span>
+          <span id="health-label">connecting</span>
+        </div>
       </div>
     </header>
 
     <div class="grid">
+      <section class="panel span-2" id="panel-activity">
+        <div class="panel-head">
+          <h2>Live loop activity</h2>
+          <span class="count" id="activity-count">0</span>
+        </div>
+        <div class="panel-body feed" id="activity"></div>
+      </section>
+
       <section class="panel span-2" id="panel-drafts">
         <div class="panel-head">
           <h2>Draft queue</h2>

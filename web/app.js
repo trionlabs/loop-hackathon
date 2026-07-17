@@ -3,7 +3,7 @@
 // Buildless dashboard client. Polls /api/state every 3s and repaints the panels.
 // No framework, no external assets, so it runs from a plain file server offline.
 
-var POLL_MS = 3000;
+var POLL_MS = 2000;
 var pendingDecision = null; // draftId currently being submitted, to lock buttons
 
 function esc(v) {
@@ -28,6 +28,16 @@ function shortDate(iso) {
   var hh = String(d.getHours()).padStart(2, "0");
   var mi = String(d.getMinutes()).padStart(2, "0");
   return mm + "/" + dd + " " + hh + ":" + mi;
+}
+
+function shortTime(iso) {
+  if (!iso) return "";
+  var d = new Date(iso);
+  if (isNaN(d.getTime())) return "";
+  var hh = String(d.getHours()).padStart(2, "0");
+  var mi = String(d.getMinutes()).padStart(2, "0");
+  var ss = String(d.getSeconds()).padStart(2, "0");
+  return hh + ":" + mi + ":" + ss;
 }
 
 function setHealth(ok) {
@@ -247,12 +257,55 @@ function renderLoop(drafts, posts, learnById) {
     .join("");
 }
 
+// Live feed of the loop's internal steps: each subagent tool call (Grok
+// x_search, Zero image, Notion read), plus draft/approve/post/learn. This is
+// what makes the closing loop visible on stage.
+function renderActivity(events) {
+  events = events || [];
+  var cnt = el("activity-count");
+  if (cnt) cnt.textContent = String(events.length);
+  var host = el("activity");
+  if (!host) return;
+  if (!events.length) {
+    host.innerHTML = emptyBlock(
+      "Idle. Click Run content loop to watch the agents work."
+    );
+    return;
+  }
+  host.innerHTML = events
+    .slice(0, 40)
+    .map(function (e) {
+      var kind = e.kind || "info";
+      var agent = e.agent
+        ? '<span class="ev-agent">' + esc(e.agent) + "</span>"
+        : "";
+      return (
+        '<div class="ev ev-' +
+        esc(kind) +
+        '">' +
+        '<span class="ev-time">' +
+        shortTime(e.ts) +
+        "</span>" +
+        '<span class="ev-loop">' +
+        esc(e.loop) +
+        "</span>" +
+        agent +
+        '<span class="ev-detail">' +
+        esc(e.detail) +
+        "</span>" +
+        "</div>"
+      );
+    })
+    .join("");
+}
+
 function render(state) {
   var learnings = state.learnings || [];
   var learnById = {};
   learnings.forEach(function (l) {
     learnById[l.id] = l;
   });
+  renderActivity(state.events);
   renderDrafts(state.drafts, learnById);
   renderSignal(state.signalAccounts);
   renderLearnings(learnings);
@@ -317,5 +370,26 @@ function poll() {
 }
 
 document.addEventListener("click", onClick);
+
+var runBtn = el("run-loop");
+if (runBtn) {
+  runBtn.addEventListener("click", function () {
+    runBtn.disabled = true;
+    runBtn.textContent = "Running...";
+    fetch("/api/run-content", { method: "POST" })
+      .then(function () {
+        poll();
+        setTimeout(function () {
+          runBtn.disabled = false;
+          runBtn.textContent = "Run content loop";
+        }, 30000);
+      })
+      .catch(function () {
+        runBtn.disabled = false;
+        runBtn.textContent = "Run content loop";
+      });
+  });
+}
+
 poll();
 setInterval(poll, POLL_MS);
