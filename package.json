@@ -15,6 +15,7 @@
     "keys:check": "tsx scripts/keys-wizard.ts",
     "notion:setup": "tsx scripts/notion-setup.ts",
     "notion:sync": "tsx scripts/notion-sync.ts",
+    "signal:scout": "tsx scripts/signal-scout.ts",
     "mcp:write": "tsx mcp-write-server/index.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
