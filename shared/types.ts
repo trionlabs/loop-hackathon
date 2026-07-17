@@ -98,10 +98,15 @@ export interface ImpactJob {
 export type Flag = "crisis" | "paused" | "killswitch";
 
 export interface Store {
+  reload(): void;
+
   putDraft(d: Draft): void;
   getDraft(id: string): Draft | undefined;
   listDrafts(status?: DraftStatus): Draft[];
   setDraftStatus(id: string, status: DraftStatus): void;
+
+  putSignalAccount(a: SignalAccount): void;
+  listSignalAccounts(): SignalAccount[];
 
   putApproval(a: ApprovalRecord): void;
   getApproval(draftId: string): ApprovalRecord | undefined;
@@ -117,6 +122,8 @@ export interface Store {
 
   putPost(p: Post): void;
   getPost(id: string): Post | undefined;
+  getPostByDraft(draftId: string): Post | undefined;
+  listPosts(): Post[];
 
   putLearning(l: Learning): void;
   recentLearnings(limit: number): Learning[];
