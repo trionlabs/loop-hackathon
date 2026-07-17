@@ -1,0 +1,49 @@
+# Akash SDL for the SignalCMO runner (health + telegram poller + scheduler).
+# The container is stateless: durable memory lives in the store/Notion, so a
+# lease restart loses nothing. The write-server holds credentials and stays on
+# the operator machine behind Pomerium; only the stateless orchestrator runs
+# here.
+#
+# Deploy: build and push the image (see ../Dockerfile) to a PUBLIC registry,
+# then paste this SDL into console.akash.network. Set real secrets as env in the
+# console at deploy time, never in this committed file. Capture DSEQ + provider
+# + public URL for the prize submission.
+version: "2.0"
+
+services:
+  runner:
+    image: ghcr.io/trionlabs/signalcmo:latest
+    env:
+      - NODE_ENV=production
+      # Set at deploy time in the Akash console (throwaway demo-scoped keys):
+      # ANTHROPIC_API_KEY, XAI_API_KEY, NOTION_TOKEN, TG_BOT_TOKEN, TG_CHAT_ID,
+      # X_API_KEY, X_API_SECRET, X_ACCESS_TOKEN, X_ACCESS_SECRET,
+      # WRITEGUARD_URL, WRITEGUARD_TOKEN.
+    expose:
+      - port: 3000
+        as: 80
+        to:
+          - global: true
+
+profiles:
+  compute:
+    runner:
+      resources:
+        cpu:
+          units: 0.5
+        memory:
+          size: 512Mi
+        storage:
+          size: 1Gi
+  placement:
+    dcloud:
+      pricing:
+        runner:
+          denom: uakt
+          amount: 10000
+
+deployment:
+  runner:
+    dcloud:
+      profile: runner
+      count: 1
