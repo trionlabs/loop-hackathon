@@ -12,6 +12,6 @@
     "rootDir": ".",
     "types": ["node"]
   },
-  "include": ["runner", "tools", "hooks", "mcp-write-server", "scripts"],
+  "include": ["shared", "runner", "tools", "hooks", "mcp-write-server", "scripts"],
   "exclude": ["node_modules", "dist"]
 }
