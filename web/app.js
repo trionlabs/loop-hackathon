@@ -316,6 +316,20 @@ function render(state) {
     "last sync " + shortDate(new Date().toISOString());
 }
 
+function toast(msg, kind, url) {
+  var t = el("toast");
+  if (!t) return;
+  var link = url
+    ? ' <a href="' + esc(url) + '" target="_blank" rel="noopener">open tweet</a>'
+    : "";
+  t.innerHTML =
+    '<div class="toast-msg ' + (kind || "ok") + '">' + esc(msg) + link + "</div>";
+  clearTimeout(t._timer);
+  t._timer = setTimeout(function () {
+    t.innerHTML = "";
+  }, 8000);
+}
+
 function submitDecision(draftId, decision, editedText) {
   if (pendingDecision) return;
   pendingDecision = draftId;
@@ -326,12 +340,26 @@ function submitDecision(draftId, decision, editedText) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   })
-    .then(function () {
+    .then(function (r) {
+      return r.json().then(function (j) {
+        return { status: r.status, body: j || {} };
+      });
+    })
+    .then(function (res) {
       pendingDecision = null;
+      var b = res.body;
+      if (res.status === 409) toast("Already decided (reset the demo state)", "warn");
+      else if (res.status === 404) toast("Unknown draft", "warn");
+      else if (res.status >= 400) toast("Request failed", "err");
+      else if (decision === "rejected") toast("Draft rejected", "warn");
+      else if (b.posted && b.url) toast("Posted to X", "ok", b.url);
+      else if (b.posted === false) toast("Post failed: " + (b.error || "unknown"), "err");
+      else toast(decision === "edited" ? "Edited + posted" : "Approved", "ok");
       poll();
     })
     .catch(function () {
       pendingDecision = null;
+      toast("Request failed", "err");
     });
 }
 

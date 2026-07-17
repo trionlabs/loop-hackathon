@@ -113,14 +113,20 @@ export function createApp(): express.Express {
     });
 
     if (decision === "approved") {
-      // A missing-credentials throw here must not lose the recorded approval, so
-      // the import and the call are both guarded.
+      // The post result is returned so the dashboard can show success + link or
+      // the real failure reason (a missing-credentials throw is caught too).
       try {
         const mod = await import("../runner/orchestrator.js");
-        await mod.runContentPost(draftId);
+        const r = await mod.runContentPost(draftId);
+        if (r.postId) {
+          res.json({ ok: true, posted: true, postId: r.postId, url: `https://x.com/i/status/${r.postId}` });
+        } else {
+          res.json({ ok: true, posted: false, error: r.error ?? "post failed" });
+        }
       } catch (e) {
-        console.error("[web] runContentPost failed:", errMsg(e));
+        res.json({ ok: true, posted: false, error: errMsg(e) });
       }
+      return;
     }
 
     res.json({ ok: true });
