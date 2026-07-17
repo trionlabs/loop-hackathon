@@ -1,12 +1,26 @@
-# Runs Pomerium in front of the locally-running write-server. Start the
-# write-server first (pnpm mcp:write on :8787), then `docker compose up` here.
-# Pin the image to a specific digest before the demo; MCP is on the main tag.
+# Pomerium Zero: the container is bootstrapped by POMERIUM_ZERO_TOKEN and pulls
+# its routes and policies from the Pomerium Zero cloud console. Nothing about
+# the policy lives in this file. The token is NOT committed; it is read from the
+# environment (keep it in config/.env).
+#
+# Run from this directory:
+#   docker compose --env-file ../config/.env up
+#
+# extra_hosts lets a console-configured route reach the write-server running on
+# the host at 127.0.0.1:8787.
 services:
   pomerium:
-    image: pomerium/pomerium:main
-    volumes:
-      - ./config.yaml:/pomerium/config.yaml:ro
+    image: pomerium/pomerium:v0.32.8
+    restart: always
     ports:
       - "443:443"
+    environment:
+      POMERIUM_ZERO_TOKEN: ${POMERIUM_ZERO_TOKEN}
+      XDG_CACHE_HOME: /var/cache
+    volumes:
+      - pomerium-cache:/var/cache
     extra_hosts:
       - "host.docker.internal:host-gateway"
+
+volumes:
+  pomerium-cache:
