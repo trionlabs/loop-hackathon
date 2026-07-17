@@ -1,4 +1,5 @@
 import { AKASHML_BASE, AKASHML_MODEL, requireEnv } from "../shared/env.js";
+import { logCall } from "../shared/telemetry.js";
 
 // Minimal OpenAI-compatible client for AkashML (open-model inference). This is
 // the agent brain that replaces the Claude Agent SDK. The orchestrator drives
@@ -35,6 +36,8 @@ export async function chat(params: {
   temperature?: number;
   model?: string;
 }): Promise<ChatMessage> {
+  const model = params.model ?? AKASHML_MODEL;
+  const started = Date.now();
   const res = await fetch(`${AKASHML_BASE}/chat/completions`, {
     method: "POST",
     headers: {
@@ -42,13 +45,22 @@ export async function chat(params: {
       "content-type": "application/json",
     },
     body: JSON.stringify({
-      model: params.model ?? AKASHML_MODEL,
+      model,
       messages: params.messages,
       tools: params.tools,
       tool_choice: params.tools ? (params.toolChoice ?? "auto") : undefined,
       max_tokens: params.maxTokens ?? 1024,
       temperature: params.temperature ?? 0.7,
     }),
+  });
+  logCall({
+    provider: "akash",
+    endpoint: "/v1/chat/completions",
+    method: "POST",
+    model,
+    ms: Date.now() - started,
+    status: res.status,
+    detail: `Akash inference [${model}]`,
   });
   if (!res.ok) throw new Error(`akashml ${res.status} ${await res.text()}`);
   const data = (await res.json()) as { choices?: { message: ChatMessage }[] };

@@ -7,6 +7,7 @@ import { sendDraftForApproval } from "./telegram.js";
 import { research } from "../tools/grok.js";
 import { resolveDataSourceId, queryDataSource } from "../tools/notion.js";
 import { generateImage } from "../tools/zero.js";
+import { setContext } from "../shared/telemetry.js";
 
 function errMsg(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
@@ -44,18 +45,6 @@ const READ_TOOLS: ToolSpec[] = [
         type: "object",
         properties: { dataSource: { type: "string" } },
         required: ["dataSource"],
-      },
-    },
-  },
-  {
-    type: "function",
-    function: {
-      name: "zero_generate_image",
-      description: "Generate a post image via Zero. Returns the hosted image URL.",
-      parameters: {
-        type: "object",
-        properties: { prompt: { type: "string", description: "image description" } },
-        required: ["prompt"],
       },
     },
   },
@@ -151,6 +140,7 @@ export async function runContentDraft(input?: {
   goal?: string;
 }): Promise<{ draftId: string }> {
   const store = getStore();
+  setContext("content", "content-writer");
   store.appendEvent({
     loop: "content",
     agent: "content-writer",
@@ -178,8 +168,7 @@ export async function runContentDraft(input?: {
     input?.goal ? `Primary goal: ${input.goal}.` : "",
     "Recent Learnings to apply (name the Learning id you used):",
     learningsText,
-    "Call grok_research at most once for a fresh signal brief (skip if not needed).",
-    "Call zero_generate_image at most once for a matching image.",
+    "Call grok_research once for a fresh signal brief.",
     "Then reply with ONLY the final post text, no preamble. Do not call more tools after drafting.",
   ]
     .filter(Boolean)
@@ -233,6 +222,7 @@ export async function runContentDraft(input?: {
 export async function runContentPost(
   draftId: string,
 ): Promise<{ postId?: string; error?: string }> {
+  setContext("post", "orchestrator");
   const url = process.env.WRITEGUARD_URL ?? "http://localhost:8787/post";
   try {
     const res = await fetch(url, {
