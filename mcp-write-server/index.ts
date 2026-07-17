@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import { fileURLToPath } from "node:url";
 import express from "express";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
@@ -10,13 +11,14 @@ import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import type { Checkpoint, ImpactJob, Post } from "../shared/types.js";
 import { getStore } from "../shared/store.js";
 import { optionalEnv } from "../shared/env.js";
+import { effectiveText, loadAutonomy } from "../shared/config.js";
 import { postTweet, uploadMedia } from "../tools/x.js";
 import { createRow } from "../tools/notion.js";
 
 // tools/x.ts and tools/notion.ts are imported here as internal functions.
 // They are never registered as agent tools anywhere, so this server is the
-// sole holder of write capability. Approval is enforced here too (defense in
-// depth), independent of any proxy or hook.
+// sole holder of write capability. Approval, kill switch and idempotency are
+// re-derived here from the durable store, independent of any proxy or hook.
 
 function ok(text: string): CallToolResult {
   return { content: [{ type: "text", text }] };
@@ -24,10 +26,6 @@ function ok(text: string): CallToolResult {
 
 function fail(text: string): CallToolResult {
   return { content: [{ type: "text", text }], isError: true };
-}
-
-function autopilotOn(type: string): boolean {
-  return optionalEnv(`AUTOPILOT_${type.toUpperCase()}`) === "true";
 }
 
 function mimeFromUrl(url: string): string {
@@ -49,18 +47,28 @@ async function postTweetTool(draftId: string): Promise<CallToolResult> {
   const draft = store.getDraft(draftId);
   if (!draft) return fail(`unknown draft ${draftId}`);
 
+  // Idempotency: never post the same draft twice.
+  const existing = store.getPostByDraft(draftId);
+  if (draft.status === "posted" || existing) {
+    return ok(`already posted${existing ? ` ${existing.id}` : ""}`);
+  }
+
+  if (store.getFlag("killswitch")) return fail("killswitch engaged");
+  if (store.getFlag("paused")) return fail("posting is paused");
+  if (store.getFlag("crisis")) return fail("crisis flag set");
+
   const approval = store.getApproval(draftId);
+  if (approval?.decision === "rejected") {
+    return fail(`draft ${draftId} was rejected; refusing to post`);
+  }
   const approved =
-    approval &&
-    (approval.decision === "approved" || approval.decision === "edited");
-  if (!approved && !autopilotOn(draft.type)) {
+    approval?.decision === "approved" || approval?.decision === "edited";
+  const autopilot = loadAutonomy()[draft.type] === true;
+  if (!approved && !autopilot) {
     return fail(`draft ${draftId} has no approval; refusing to post`);
   }
 
-  const text =
-    approval?.decision === "edited" && approval.editedText
-      ? approval.editedText
-      : draft.text;
+  const text = effectiveText(draft, approval);
 
   let mediaIds: string[] | undefined;
   if (draft.mediaUrl) {
@@ -104,6 +112,7 @@ async function notionWriteTool(
   dataSourceId: string,
   properties: Record<string, unknown>,
 ): Promise<CallToolResult> {
+  if (getStore().getFlag("killswitch")) return fail("killswitch engaged");
   const row = await createRow(dataSourceId, properties);
   return ok(`created notion row ${row.id}`);
 }
@@ -171,12 +180,29 @@ function buildServer(): Server {
   return server;
 }
 
+function bearerOk(header: string | undefined, token: string): boolean {
+  if (!header) return false;
+  const expected = `Bearer ${token}`;
+  const a = Buffer.from(header);
+  const b = Buffer.from(expected);
+  return a.length === b.length && crypto.timingSafeEqual(a, b);
+}
+
 export async function startWriteServer(): Promise<void> {
+  const token = optionalEnv("WRITEGUARD_TOKEN");
+  if (!token) throw new Error("WRITEGUARD_TOKEN must be set to start the write server");
+
   const app = express();
   app.use(express.json());
 
-  // Stateless streamable-HTTP: a fresh server and transport per request.
+  // Stateless streamable-HTTP: a fresh server and transport per request. Every
+  // request must carry the shared bearer token; the server binds loopback so it
+  // is only reachable via localhost or the proxy in front of it.
   app.post("/mcp", async (req, res) => {
+    if (!bearerOk(req.headers.authorization, token)) {
+      res.status(401).json({ error: "unauthorized" });
+      return;
+    }
     const server = buildServer();
     const transport = new StreamableHTTPServerTransport({
       sessionIdGenerator: undefined,
@@ -185,13 +211,18 @@ export async function startWriteServer(): Promise<void> {
       void transport.close();
       void server.close();
     });
-    await server.connect(transport);
-    await transport.handleRequest(req, res, req.body);
+    try {
+      await server.connect(transport);
+      await transport.handleRequest(req, res, req.body);
+    } catch (err) {
+      console.error("[writeguard] request failed:", err);
+      if (!res.headersSent) res.status(500).json({ error: "internal error" });
+    }
   });
 
   const port = Number(optionalEnv("WRITE_SERVER_PORT") ?? 8787);
   await new Promise<void>((resolve) => {
-    app.listen(port, () => resolve());
+    app.listen(port, "127.0.0.1", () => resolve());
   });
 }
 
