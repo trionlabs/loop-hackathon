@@ -173,8 +173,8 @@ const posts: Post[] = [
 
 for (const p of posts) store.putPost(p);
 
-// SignalAccount rows across all three tiers. These are NOT persisted (no Store
-// putter). Printed only, so the demo narrative and this report have the data.
+// SignalAccount rows across all three tiers, persisted so the dashboard tier
+// board renders the Signal wedge.
 const signalAccounts: SignalAccount[] = [
   {
     handle: "naval",
@@ -263,6 +263,8 @@ const signalAccounts: SignalAccount[] = [
   },
 ];
 
+for (const s of signalAccounts) store.putSignalAccount(s);
+
 // Summary.
 console.log("seed complete");
 console.log(`  learnings:        ${learningsAdded} added (${learnings.length} defined)`);
@@ -271,8 +273,9 @@ console.log(`    pending:        ${store.listDrafts("pending_approval").length}`
 console.log(`    posted:         ${store.listDrafts("posted").length}`);
 console.log(`  posts:            ${posts.length} upserted (warm + cold)`);
 console.log(`  approvals:        1 (drf_posted_warm)`);
+console.log(`  signalAccounts:   ${signalAccounts.length} upserted`);
 console.log("");
-console.log("signal accounts (NOT persisted - Store has no putter):");
+console.log("signal accounts:");
 for (const s of signalAccounts) {
   console.log(
     `  ${s.tier.padEnd(9)} @${s.handle.padEnd(16)} score ${String(s.score).padStart(3)}  ${s.rationale.slice(0, 60)}`,
