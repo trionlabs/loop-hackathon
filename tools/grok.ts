@@ -23,9 +23,10 @@ export async function research(input: {
   model?: string;
   searchTools?: SearchTool[];
 }): Promise<{ answer: string; citations: string[] }> {
-  const tools = (input.searchTools ?? ["x_search", "web_search"]).map((t) => ({
+  const tools = (input.searchTools ?? ["x_search"]).map((t) => ({
     type: t,
   }));
+  // Hard timeout so a slow or hung search can never stall the demo loop.
   const res = await fetch(`${XAI_BASE}/responses`, {
     method: "POST",
     headers: {
@@ -37,6 +38,7 @@ export async function research(input: {
       input: [{ role: "user", content: input.brief }],
       tools,
     }),
+    signal: AbortSignal.timeout(25000),
   });
   if (!res.ok) throw new Error(`grok research ${res.status}`);
   const body = (await res.json()) as ResponsesBody;
