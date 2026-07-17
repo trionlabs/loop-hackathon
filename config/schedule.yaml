@@ -1,0 +1,9 @@
+timezone: "{{PRINCIPAL_TZ}}"
+loops:
+  content:      { cron: "0 7 * * *",  agent: content-writer,    max_turns: 25, budget_usd: 1.50 }
+  digest:       { cron: "0 {{DIGEST_HOUR}} * * *", agent: interviewer, max_turns: 10, budget_usd: 0.50 }
+  impact:       { trigger: per-post +1h/+24h/+72h, agent: impact-analyst, max_turns: 15, budget_usd: 0.75 }
+  signal:       { cron: "0 6 * * 1",  agent: signal-scout,      max_turns: 40, budget_usd: 3.00 }
+  competitor:   { cron: "0 6 * * 2,5", agent: competitor-watcher, max_turns: 20, budget_usd: 1.00 }
+  tone:         { cron: "0 18 * * 0", agent: tone-evolver,      max_turns: 20, budget_usd: 1.50 }
+  tg_webhook:   { trigger: webhook,   agent: orchestrator,      max_turns: 8,  budget_usd: 0.25 }

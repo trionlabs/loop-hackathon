@@ -1,0 +1,16 @@
+# Embargo topics are absolute. Content Writer self-checks against them and the
+# write-server re-checks server-side before any post. Seed with the principal's
+# answer to onboarding question 6, then edit via /embargo add <topic>.
+topics:
+  - politics
+  - tragedy
+
+# crisis_keywords drive the crisis silence rule: if a live post or the current
+# news cycle matches any of these, set crisis_flag and publish nothing until the
+# principal clears it.
+crisis_keywords:
+  - shooting
+  - earthquake
+  - outbreak
+  - layoffs
+  - disaster
