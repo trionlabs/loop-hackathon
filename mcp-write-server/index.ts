@@ -103,7 +103,19 @@ async function postDraft(draftId: string): Promise<{ ok: boolean; postId?: strin
     }
   }
 
-  const posted = await postTweet({ text, mediaIds });
+  let posted: { id: string };
+  try {
+    posted = await postTweet({ text, mediaIds });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    if (msg.includes(" 403")) {
+      return {
+        ok: false,
+        error: "X rejected this post (rate limit or duplicate). Wait a few minutes or edit the text.",
+      };
+    }
+    return { ok: false, error: `X post failed: ${msg.slice(0, 140)}` };
+  }
   const now = Date.now();
   const post: Post = {
     id: posted.id,
